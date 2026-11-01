@@ -262,12 +262,41 @@ function drawBook(ctx, y) {
 }
 
 // o: { x, y, look, facing, moving, phase, sitting, seed, status, holding, vendor }
-// o.action = { kind, start } where start is in the same seconds as t; kinds: dance, wave, clap, jump, cheers, highfive, hug
+// how a puke plays out over its 3.4 s: gag, lean over, spew, straighten back up
+function pukeState(at) {
+  const lean = at < 0.5 ? at / 0.5 : at < 2.7 ? 1 : Math.max(0, 1 - (at - 2.7) / 0.7);
+  const spew = at > 0.55 && at < 2.6 ? Math.max(0, Math.min(1, (at - 0.55) / 0.15, (2.6 - at) / 0.2)) : 0;
+  return { lean, spew };
+}
+
+// vomit arcing from the mouth (mx, my) down to the floor in front, in the person's unscaled frame
+function drawSpew(ctx, mx, my, f, at, spew) {
+  const N = 18;
+  ctx.globalAlpha = 0.55 * spew;
+  ctx.strokeStyle = '#a9bf43';
+  ctx.lineWidth = 3.4;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(mx, my);
+  ctx.quadraticCurveTo(mx + f * 9, my * 0.6, mx + f * 14, 0);
+  ctx.stroke();
+  ctx.globalAlpha = 1;
+  for (let i = 0; i < N; i++) {
+    const u = (at * 2.6 + i / N) % 1;
+    const x = mx + f * u * 14 + Math.sin(i * 7.3) * 1.8 * u;
+    const y = my * (1 - u * u);
+    ctx.fillStyle = i % 4 === 0 ? '#e0c86a' : i % 2 ? '#b8cc4c' : '#93aa36';
+    dot(ctx, x, y, (2.3 - u * 0.7) * spew);
+  }
+}
+
+// o.action = { kind, start } where start is in the same seconds as t; kinds: dance, wave, clap, jump, cheers, puke, highfive, hug
 export function drawPerson(ctx, o, s, t) {
   const L = o.look;
   const f = o.facing || 1;
   const act = o.action ? o.action.kind : null;
   const at = o.action ? t - o.action.start : 0;
+  const pk = act === 'puke' ? pukeState(at) : null;
   ctx.save();
   ctx.translate(o.x, o.y);
   ctx.scale(s, s);
@@ -278,9 +307,27 @@ export function drawPerson(ctx, o, s, t) {
     sway = Math.sin(at * 6) * (o.sitting ? 0.05 : 0.14);
     if (!o.sitting) hop = Math.abs(Math.sin(at * 6)) * 4;
   } else if (act === 'hug') sway = 0.12 * f;
+  // puking bends at the hips instead (legs stay planted), see below
+  const bend = pk ? f * pk.lean * (o.sitting ? 0.42 : 0.62) + (at < 0.55 ? Math.sin(at * 38) * 0.05 : 0) : 0;
 
   ctx.fillStyle = 'rgba(0,0,0,0.28)';
   ell(ctx, 0, 0, (o.sitting ? 19 : 15) * (1 - hop / 60), 4.5 * (1 - hop / 60));
+  // where the mouth ends up once the upper body bends over the hips (hip ~25 px up, mouth ~38 px above that)
+  const mouth = { x: 2.2 * f * Math.cos(bend) + 38 * Math.sin(bend), y: -25 + 2.2 * f * Math.sin(bend) - 38 * Math.cos(bend) };
+  if (pk && at > 0.6) {
+    // the puddle grows, then fades as they recover
+    const grow = Math.min(1, (at - 0.6) / 1.6);
+    const px = mouth.x + f * 14;
+    ctx.globalAlpha = 0.85 * Math.max(0, at > 3 ? 1 - (at - 3) / 0.4 : 1);
+    ctx.fillStyle = '#93aa36';
+    ell(ctx, px, 1, 3 + 12 * grow, 1.2 + 3.6 * grow);
+    ctx.fillStyle = '#c3d45a';
+    ell(ctx, px - f * 3, 0.4, 1.5 + 6 * grow, 0.6 + 1.8 * grow);
+    ctx.fillStyle = '#e0c86a';
+    dot(ctx, px + f * 5 * grow, 0.5, 1.4 * grow);
+    dot(ctx, px - f * 6 * grow, 1.4, 1.1 * grow);
+    ctx.globalAlpha = 1;
+  }
   ctx.translate(0, -hop);
   ctx.rotate(sway);
 
@@ -312,6 +359,12 @@ export function drawPerson(ctx, o, s, t) {
   ctx.fillStyle = '#2a2633';
   ell(ctx, lf[0] + f * 1.5, lf[1] + 1.5, 5, 3);
   ell(ctx, rf[0] + f * 1.5, rf[1] + 1.5, 5, 3);
+
+  if (bend) {
+    ctx.translate(0, hip);
+    ctx.rotate(bend);
+    ctx.translate(0, -hip);
+  }
 
   // torso
   const top = hip - 30;
@@ -356,6 +409,10 @@ export function drawPerson(ctx, o, s, t) {
   } else if (act === 'hug') {
     lh = [-4 + f * 6, sh + 9];
     rh = [4 + f * 6, sh + 9];
+  } else if (pk) {
+    // one hand on the belly, the other braced out in front
+    lh = [f * 3, sh + 16];
+    rh = [f * 17, sh + 19];
   } else if (reading) {
     lh = [-7, sh + 15];
     rh = [7, sh + 15];
@@ -393,18 +450,24 @@ export function drawPerson(ctx, o, s, t) {
   }
   ctx.fillStyle = L.skin;
   dot(ctx, 0, hy, 14);
+  if (pk) {
+    // turning green
+    ctx.fillStyle = `rgba(110,190,70,${0.5 * pk.lean})`;
+    dot(ctx, 0, hy, 14);
+  }
   if (o.back) {
     // seen from behind: back of the head, hats still drawn, no face
     ctx.fillStyle = L.hair;
     dot(ctx, 0, hy, 14.4);
     if (L.style === 'nonla' || L.style === 'cap') drawHair(ctx, L, hy, f);
     ctx.restore();
+    if (pk && pk.spew) drawSpewAt(ctx, o, s, mouth, f, at, pk.spew);
     return;
   }
   drawHair(ctx, L, hy, f);
 
   const eyeY = hy + (reading ? 2.5 : 1.5);
-  const closed = o.status === 'afk' || (t + (o.seed || 0) * 3.1) % 4.2 < 0.13;
+  const closed = o.status === 'afk' || (pk && pk.lean > 0.3) || (t + (o.seed || 0) * 3.1) % 4.2 < 0.13;
   ctx.fillStyle = '#2b2230';
   if (closed) {
     ctx.fillRect(fx - 7, eyeY, 4, 1.5);
@@ -416,7 +479,20 @@ export function drawPerson(ctx, o, s, t) {
   ctx.fillStyle = 'rgba(255,110,120,0.35)';
   dot(ctx, fx - 8.5, hy + 6, 2.6);
   dot(ctx, fx + 8.5, hy + 6, 2.6);
-  if (act && act !== 'wave') {
+  if (pk) {
+    ctx.fillStyle = '#5a2a2a';
+    if (pk.spew) ell(ctx, fx + f, hy + 6, 3.6, 2.4 + pk.spew * 1.6);
+    else {
+      // queasy wobbly mouth
+      ctx.strokeStyle = '#5a2a2a';
+      ctx.lineWidth = 1.4;
+      ctx.beginPath();
+      ctx.moveTo(fx - 4, hy + 6.5);
+      ctx.quadraticCurveTo(fx - 1.5, hy + 4.5, fx, hy + 6.5);
+      ctx.quadraticCurveTo(fx + 2, hy + 8.5, fx + 4, hy + 6);
+      ctx.stroke();
+    }
+  } else if (act && act !== 'wave') {
     // big open smile while dancing, cheering, hugging…
     ctx.fillStyle = '#7a3b3b';
     ctx.beginPath();
@@ -430,6 +506,15 @@ export function drawPerson(ctx, o, s, t) {
     ctx.stroke();
   }
 
+  ctx.restore();
+  if (pk && pk.spew) drawSpewAt(ctx, o, s, mouth, f, at, pk.spew);
+}
+
+function drawSpewAt(ctx, o, s, mouth, f, at, spew) {
+  ctx.save();
+  ctx.translate(o.x, o.y);
+  ctx.scale(s, s);
+  drawSpew(ctx, mouth.x, mouth.y + 1, f, at, spew);
   ctx.restore();
 }
 
@@ -1221,7 +1306,17 @@ export class BaseScene {
       const icon = STATUS_ICON[p.status];
       ctx.font = '800 12px Nunito, sans-serif';
       const tw = ctx.measureText(p.name).width;
-      const w = tw + 18 + (isHost ? 17 : 0) + (icon ? 17 : 0);
+      const w = tw + 18 + (isHost ? 17 : 0) + (icon ? 17 : 0) + (p.mic ? 17 : 0);
+      if (p.speaking) {
+        // green glow around the tag while their voice comes through
+        ctx.strokeStyle = 'rgba(126,224,168,0.95)';
+        ctx.lineWidth = 2.5;
+        ctx.shadowColor = '#7ee0a8';
+        ctx.shadowBlur = 10;
+        rr(ctx, p.x - w / 2 - 2, tagY - 12, w + 4, 24, 12);
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+      }
       ctx.fillStyle = isSelf ? 'rgba(255,196,92,0.95)' : 'rgba(18,14,34,0.72)';
       rr(ctx, p.x - w / 2, tagY - 10, w, 20, 10);
       ctx.fill();
@@ -1240,6 +1335,13 @@ export class BaseScene {
       if (icon) {
         ctx.font = emojiFont(12);
         ctx.fillText(icon, cx, tagY + 1);
+        cx += 17;
+      }
+      if (p.mic) {
+        ctx.font = emojiFont(12);
+        ctx.globalAlpha = p.speaking ? 1 : 0.7;
+        ctx.fillText('🎙️', cx, tagY + 1);
+        ctx.globalAlpha = 1;
       }
 
       if (p.bubble && now < p.bubble.until) {

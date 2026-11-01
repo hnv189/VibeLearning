@@ -3,6 +3,7 @@ import { NightMarketScene, W, H, drawPerson, depthScale } from './scene.js';
 import { DalatScene } from './dalat.js';
 import { NhauScene } from './nhau.js';
 import { YouTubeMusic, parseYouTubeId } from './youtube.js';
+import { Voice } from './voice.js';
 
 const $ = (sel) => document.querySelector(sel);
 const pick = (arr) => arr[(Math.random() * arr.length) | 0];
@@ -27,6 +28,7 @@ const ACTIONS = {
   clap: { label: '👏 Clap', secs: 2.4 },
   jump: { label: '🦘 Jump', secs: 0.9 },
   cheers: { label: '🍻 Raise a glass', secs: 2.2 },
+  puke: { label: '🤮 Ói', secs: 3.4 },
 };
 const INTERACTIONS = {
   wave: { label: '👋 Wave at', anim: 'wave', emoji: '👋', verb: 'waved at', walk: false },
@@ -37,6 +39,9 @@ const INTERACTIONS = {
 const ANIM_SECS = { highfive: 1.4, hug: 2.2 };
 const MOVE_KEYS = { arrowleft: [-1, 0], a: [-1, 0], arrowright: [1, 0], d: [1, 0], arrowup: [0, -1], w: [0, -1], arrowdown: [0, 1], s: [0, 1] };
 const WALK_SPEED = 150;
+// phones and tablets: bigger tap targets, "tap" instead of "click" in hints
+const COARSE = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
+const HIT = COARSE ? 1.6 : 1;
 
 const store = {
   get(k, d) {
@@ -56,7 +61,9 @@ const store = {
 
 const randomLook = () => ({ skin: pick(LOOK.skin), shirt: pick(LOOK.shirt), pants: pick(LOOK.pants), hair: pick(LOOK.hair), style: pick(LOOK.style) });
 const profile = store.get('profile', null) || { name: '', look: randomLook() };
-const prefs = store.get('prefs', { music: 70, ambience: 80 });
+// fill in anything missing from an old or damaged saved profile
+profile.look = { ...randomLook(), ...(profile.look || {}) };
+const prefs = { music: 70, ambience: 80, voice: 100, ...store.get('prefs', {}) };
 const saveProfile = () => store.set('profile', profile);
 
 const canvas = $('#game');
@@ -89,6 +96,17 @@ const yt = new YouTubeMusic($('#tv'), 'yt-player', {
     ),
 });
 yt.setVolume(prefs.music);
+const voice = new Voice({
+  getSocket: () => state.socket,
+  getSelfId: () => state.selfId,
+  audioCtx: () => audio.ctx,
+  onState: () => renderMic(),
+  onError: (msg) => {
+    toast('🎙️ ' + msg);
+    renderMic();
+  },
+});
+voice.setVolume(prefs.voice / 100);
 
 const state = {
   socket: null,
@@ -109,8 +127,10 @@ const state = {
   dms: new Map(), // peerId -> [{ mine, text } | { system, text }]
   unread: new Map(), // peerId -> count
   dmPeer: null,
+  sceneList: [],
 };
-let view = { dpr: 1, scale: 1, ox: 0, oy: 0 };
+let view = { dpr: 1, scale: 1, ox: 0, oy: 0, cw: W, ch: H };
+const cam = { x: W / 2 };
 
 // ---------- canvas sizing ----------
 
@@ -121,9 +141,33 @@ function resize() {
   canvas.height = Math.round(ch * dpr);
   canvas.style.width = cw + 'px';
   canvas.style.height = ch + 'px';
-  const scale = Math.min(cw / W, ch / H);
-  view = { dpr, scale, ox: (cw - W * scale) / 2, oy: (ch - H * scale) / 2 };
-  placeTV();
+  let scale = Math.min(cw / W, ch / H);
+  let oy = (ch - H * scale) / 2;
+  if (ch > cw) {
+    // tall phone screens: zoom in so the scene isn't a thin strip (the camera then follows you sideways)
+    // and sit it just above the chat bar, where your thumb is
+    scale = Math.min(ch / H, Math.max(scale, (ch * 0.62) / H));
+    oy = Math.max(56, Math.min(oy, ch - 120 - H * scale));
+  }
+  view = { dpr, scale, ox: (cw - W * scale) / 2, oy, cw, ch };
+  updateCamera(0, true);
+}
+
+// when the scene is wider than the screen, keep yourself near the middle
+function updateCamera(dt, snap = false) {
+  const sw = W * view.scale;
+  let ox;
+  if (sw <= view.cw + 0.5) ox = (view.cw - sw) / 2;
+  else {
+    const self = state.players.get(state.selfId);
+    const target = state.joined && self ? self.x : W / 2;
+    cam.x = snap ? target : cam.x + (target - cam.x) * Math.min(1, dt * 4);
+    ox = Math.max(view.cw - sw, Math.min(0, view.cw / 2 - cam.x * view.scale));
+  }
+  if (snap || Math.abs(ox - view.ox) > 0.1) {
+    view.ox = ox;
+    placeTV();
+  }
 }
 
 // lay the YouTube player exactly over the scene's TV screen
@@ -136,6 +180,7 @@ function placeTV() {
   tv.height = r.h * view.scale + 'px';
 }
 window.addEventListener('resize', resize);
+if (window.visualViewport) window.visualViewport.addEventListener('resize', resize);
 resize();
 
 function toWorld(e) {
@@ -164,6 +209,8 @@ function addPlayer(p) {
     bubble: null,
     emote: null,
     action: p.dancing ? { kind: 'dance', start: performance.now() / 1000 } : null,
+    mic: !!p.mic,
+    speaking: false,
   });
 }
 
@@ -229,7 +276,7 @@ function playerAt(x, y) {
   const others = [...state.players.values()].filter((p) => p.id !== state.selfId).sort((a, b) => b.y - a.y);
   return others.find((p) => {
     const s = depthScale(p.y);
-    return Math.abs(x - p.x) < 16 * s && y > p.y - 88 * s && y < p.y + 4;
+    return Math.abs(x - p.x) < 16 * s * HIT && y > p.y - 88 * s - (HIT - 1) * 20 && y < p.y + 4 * HIT;
   });
 }
 
@@ -283,6 +330,7 @@ function update(dt, now) {
     if (p.holding && now > p.holding.until) p.holding = null;
     if (p.bubble && now > p.bubble.until) p.bubble = null;
     if (p.emote && now - p.emote.start > 2200) p.emote = null;
+    p.speaking = p.mic && voice.speaking(p.id);
     if (p.action) {
       const secs = (ACTIONS[p.action.kind] || {}).secs || ANIM_SECS[p.action.kind] || 2;
       if (p.moving || now / 1000 - p.action.start > secs) p.action = null;
@@ -297,6 +345,7 @@ function frame(now) {
   const dt = Math.min(0.05, (now - last) / 1000);
   last = now;
   update(dt, now);
+  updateCamera(dt);
 
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.fillStyle = '#0c0a16';
@@ -395,7 +444,8 @@ async function loadRooms() {
       card.querySelector('.room-thumb').textContent = r.thumb;
       card.querySelector('strong').textContent = r.name;
       card.querySelector('p').textContent = r.description;
-      card.querySelector('.room-count').textContent = r.count === 0 ? 'Empty, be the first (you’ll host)' : `${r.count} / ${r.max} hanging out`;
+      card.querySelector('.room-count').textContent =
+        (r.count === 0 ? 'Empty, be the first (you’ll host)' : `${r.count} / ${r.max} hanging out`) + (r.moved ? ` · now: ${r.sceneLabel}` : '');
       card.onclick = () => selectRoom(r.id);
       list.appendChild(card);
     }
@@ -466,16 +516,21 @@ function bindSocket(s) {
     }
   });
   s.on('disconnect', (reason) => {
+    // voice connections don't survive a reconnect (you come back with a new id)
+    if (voice.on) log('Mic turned off: connection dropped. Tap 🔇 to turn it back on.');
+    voice.reset();
     if (state.roomId && reason !== 'io client disconnect') $('#reconnect').hidden = false;
   });
   s.on('playerJoined', (p) => {
     addPlayer(p);
+    if (voice.on) voice.call(p.id);
     renderPeople();
     log(`${p.name} pulled up a stool.`);
   });
   s.on('playerLeft', ({ id, hostId }) => {
     const p = state.players.get(id);
     state.players.delete(id);
+    voice.peerLeft(id);
     if (p) log(`${p.name} headed home.`);
     if (p && state.dmPeer === id) {
       addDm(id, { system: true, text: `${p.name} left the room` });
@@ -489,6 +544,10 @@ function bindSocket(s) {
     if (!p) return;
     p.action = kind === 'stop' ? null : { kind, start: performance.now() / 1000 };
     if (id === state.selfId) $('#action-btn').classList.toggle('active', kind === 'dance');
+    if (kind === 'puke') {
+      audio.pukeSound();
+      log(`${p.name} ói 🤮`);
+    }
   });
   s.on('interact', ({ from, to, kind }) => {
     const a = state.players.get(from), b = state.players.get(to);
@@ -567,6 +626,35 @@ function bindSocket(s) {
     scene.callWaiter(table, mine ? () => openMenu(table) : null);
   });
   s.on('settings', applySettings);
+  s.on('mic', ({ id, on }) => {
+    const p = state.players.get(id);
+    if (p) p.mic = on;
+    if (!on) voice.hangUp(id);
+    renderPeople();
+  });
+  s.on('rtc', (msg) => voice.handle(msg));
+  s.on('scene', ({ room, by, players }) => {
+    applyRoom(room);
+    for (const q of players) {
+      const p = state.players.get(q.id);
+      if (!p) continue;
+      p.x = p.tx = q.x;
+      p.y = p.ty = q.y;
+      p.moving = false;
+      p.holding = null;
+      p.action = null;
+    }
+    state.pending = null;
+    state.keys.clear();
+    closeMenu();
+    closePopovers();
+    $('#action-btn').classList.remove('active');
+    updateCamera(0, true);
+    renderVibe();
+    const label = (room.scenes.find((x) => x.id === room.scene) || {}).label || 'a new place';
+    log(`✨ ${by} moved everyone to ${label}`);
+    scene.vendorSay(scene.greeting(profile.name), performance.now());
+  });
   s.on('host', ({ hostId }) => setHost(hostId));
 }
 
@@ -575,14 +663,13 @@ function enterRoom(res) {
   state.selfId = res.selfId;
   state.hostId = res.hostId;
   state.tracks = res.tracks || [];
-  state.menu = res.room.menu;
-  state.serve = res.room.serve || 'hand';
-  setScene(res.room.scene);
-  if (scene.setTables) scene.setTables(res.room.tables || []);
-  $('#order-menu h3').textContent = scene.menuTitle;
-  $('#hint').textContent = scene.hint;
+  voice.reset();
+  voice.setIceServers(res.iceServers);
+  applyRoom(res.room);
   state.players.clear();
   res.players.forEach(addPlayer);
+  updateCamera(0, true);
+  renderMic();
   $('#landing').hidden = true;
   $('#room-ui').hidden = false;
   $('#reconnect').hidden = true;
@@ -601,6 +688,38 @@ function enterRoom(res) {
   }
 }
 
+// the room's scene and everything that comes with it (menu, serving style, tables)
+function applyRoom(room) {
+  state.menu = room.menu;
+  state.serve = room.serve || 'hand';
+  state.sceneList = room.scenes || [];
+  setScene(room.scene);
+  if (scene.setTables) scene.setTables(room.tables || []);
+  $('#order-menu h3').textContent = scene.menuTitle;
+  $('#hint').textContent = touchHint(scene.hint);
+}
+
+function touchHint(text) {
+  if (!COARSE) return text;
+  return text.replace(/Click/g, 'Tap').replace(/click/g, 'tap').replace(/\s*·\s*WASD.*$/, '');
+}
+
+function renderMic() {
+  const b = $('#mic-btn');
+  b.classList.toggle('active', voice.on);
+  b.textContent = voice.on ? '🎙️' : '🔇';
+  b.title = voice.on ? 'Mic is on. Tap to turn it off' : 'Turn on your mic (voice chat)';
+  b.setAttribute('aria-pressed', String(voice.on));
+}
+
+function toggleMic() {
+  audio.init();
+  if (voice.on) return voice.stop();
+  if (!state.joined) return;
+  const others = [...state.players.keys()].filter((id) => id !== state.selfId);
+  voice.start(others);
+}
+
 function leaveRoom() {
   state.roomId = null;
   state.joined = false;
@@ -615,6 +734,8 @@ function leaveRoom() {
   state.dms.clear();
   state.unread.clear();
   $('#action-btn').classList.remove('active');
+  voice.reset();
+  renderMic();
   audio.stopAll();
   yt.stop();
   setTheater(false);
@@ -682,6 +803,12 @@ function renderVibe() {
   sel.disabled = !isHost;
   $('#yt-form').hidden = !isHost;
 
+  const ss = $('#scene-select');
+  ss.innerHTML = '';
+  for (const sc of state.sceneList) ss.add(new Option(sc.label, sc.id));
+  ss.value = sceneId;
+  ss.disabled = !isHost;
+
   const box = $('#ambience-list');
   box.innerHTML = '';
   for (const a of AMBIENCE_LAYERS) {
@@ -710,7 +837,7 @@ function renderPeople() {
     dot.style.background = p.look.shirt;
     const who = document.createElement('span');
     who.className = 'who';
-    who.textContent = `${p.id === state.hostId ? '👑 ' : ''}${p.name}${p.id === state.selfId ? ' (you)' : ''}`;
+    who.textContent = `${p.id === state.hostId ? '👑 ' : ''}${p.mic ? '🎙️ ' : ''}${p.name}${p.id === state.selfId ? ' (you)' : ''}`;
     const st = document.createElement('span');
     st.textContent = STATUS_ICON[p.status] || '';
     st.title = p.status;
@@ -1009,6 +1136,10 @@ function initRoomUI() {
   $('#tv-expand').onclick = () => setTheater(!$('#tv').classList.contains('theater'));
 
   $('#music-select').onchange = (e) => sendSettings({ music: e.target.value });
+  $('#scene-select').onchange = (e) => {
+    if (e.target.value !== sceneId) state.socket.emit('changeScene', e.target.value);
+  };
+  $('#mic-btn').onclick = toggleMic;
   $('#yt-form').addEventListener('submit', (e) => {
     e.preventDefault();
     const id = parseYouTubeId($('#yt-url').value);
@@ -1017,18 +1148,22 @@ function initRoomUI() {
     $('#yt-url').value = '';
   });
 
-  const vm = $('#vol-music'), va = $('#vol-amb');
+  const vm = $('#vol-music'), va = $('#vol-amb'), vv = $('#vol-voice');
   vm.value = prefs.music;
   va.value = prefs.ambience;
+  vv.value = prefs.voice;
   const onVol = () => {
     prefs.music = +vm.value;
     prefs.ambience = +va.value;
+    prefs.voice = +vv.value;
     audio.setVolumes(prefs.music / 100, prefs.ambience / 100);
     yt.setVolume(prefs.music);
+    voice.setVolume(prefs.voice / 100);
     store.set('prefs', prefs);
   };
   vm.oninput = onVol;
   va.oninput = onVol;
+  vv.oninput = onVol;
 
   const emotes = $('#emotes');
   for (const e of EMOTES) {
@@ -1068,6 +1203,7 @@ function initRoomUI() {
   canvas.addEventListener('pointerdown', (e) => {
     audio.init();
     yt.resume();
+    voice.resume();
     const self = me();
     if (!state.joined || !self) return;
     const { x, y } = toWorld(e);

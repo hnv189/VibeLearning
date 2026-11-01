@@ -74,6 +74,9 @@
       <div class="tab" id="tab-vibe">
         <h3>Sound &amp; vibe</h3>
         <p id="host-note" class="note"></p>
+        <label class="field">Scene
+          <select id="scene-select" class="input"></select>
+        </label>
         <label class="field">Music
           <select id="music-select" class="input"></select>
         </label>
@@ -89,6 +92,7 @@
         <h3>Your volume</h3>
         <label class="slider">🎵 Music <input type="range" id="vol-music" min="0" max="100"></label>
         <label class="slider">🌃 Street <input type="range" id="vol-amb" min="0" max="100"></label>
+        <label class="slider">🎙️ Voices <input type="range" id="vol-voice" min="0" max="100"></label>
         <p class="fine">Volume is just for you. The host picks what everyone hears.</p>
       </div>
 
@@ -125,7 +129,8 @@
         <option value="studying">📖 Studying</option>
         <option value="afk">💤 AFK</option>
       </select>
-      <input id="chat-input" maxlength="140" placeholder="Say something… (Enter)">
+      <input id="chat-input" maxlength="140" placeholder="Say something…" enterkeyhint="send">
+      <button type="button" id="mic-btn" class="mic-btn" title="Turn on your mic (voice chat)" aria-pressed="false">🔇</button>
       <div id="emotes" class="emotes"></div>
       <button type="button" id="action-btn" class="action-btn" title="Moves: dance, wave, clap…">🕺 Moves</button>
     </form>

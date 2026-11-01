@@ -22,6 +22,10 @@ Others on your network can join at `http://<your-ip>:3000`. `?join=night-market`
 - **Chat & emotes**: speech bubbles over your head plus a small chat log.
 - **Status**: Chilling / Studying (your character reads a book) / AFK.
 - **Host controls**: the first person in a room is host (👑). They choose the music and which street sounds play for everyone, and can hand host to someone else. Each person controls their own volume.
+- **Change scene**: the host can switch the room to another scene (**Vibe → Scene**) without anyone leaving. The menu and tables follow the new scene; everyone is moved to a free spot and dishes are cleared.
+- **Voice chat**: tap 🔇 in the chat bar to turn your mic on (🎙️). Others hear you right away, a 🎙️ shows on your name tag and it glows green while you talk. **Vibe → Voices** sets how loud others are for you.
+- **Moves**: dance, wave, clap, jump, raise a glass, and 🤮 Ói (lean over, turn green, leave a puddle).
+- **Phones**: works in portrait and landscape. In portrait the scene zooms in and the camera follows you; tap to walk.
 - **Focus timer**: a personal Pomodoro timer that sets you to Studying during focus blocks.
 
 ## Sound
@@ -41,16 +45,24 @@ The host can paste any YouTube link (videos, live streams, Shorts, music.youtube
 - Some videos block embedding, and ads may play. The app shows a message when a video can't play.
 - The Music volume slider controls the YouTube volume too.
 
+### Voice chat notes
+
+- Audio goes directly between browsers (WebRTC). The server only passes the connection setup messages along and never hears anything.
+- Browsers allow the mic only on **HTTPS** or `localhost`. On your Wi-Fi via `http://<your-ip>:3000` the mic won't work; deploy (Render gives HTTPS) or use a tunnel.
+- It uses free public STUN servers, which work for most home and mobile networks. On strict networks (some offices and schools) people may not hear each other; set a TURN server with the `ICE_SERVERS` environment variable, for example `ICE_SERVERS='[{"urls":"turn:turn.example.com:3478","username":"u","credential":"p"}]'`.
+- Everyone with a mic on connects to everyone else, so it suits small groups (up to about 8 talking at once).
+
 ## Code map
 
 | File | What it does |
 | --- | --- |
-| `server.js` | Express + Socket.IO; rooms (scene, menu, default sounds), players, host, settings |
+| `server.js` | Express + Socket.IO; scenes (menu, default sounds), rooms, players, host, settings, voice signaling |
 | `public/js/scene.js` | Shared drawing (characters, props, TV screen, rain, name tags) + the night-market scene |
 | `public/js/dalat.js` | The Chợ Đà Lạt scene |
 | `public/js/nhau.js` | The quán nhậu scene: tables, waiter, LED order ticker |
 | `public/js/audio.js` | Ambience layers and the music sequencer |
 | `public/js/youtube.js` | YouTube link parsing and the synced IFrame player |
+| `public/js/voice.js` | Voice chat: mic, WebRTC connections, who's talking |
 | `public/js/main.js` | Lobby, networking, input, panels, focus timer |
 
-To add a room, add a `createRoom({...})` call in `server.js`. To give it its own look, write a scene class that extends `BaseScene` (see `dalat.js`) and register it in `SCENES` in `main.js`.
+To add a scene, add it to `SCENES` in `server.js`, write a scene class that extends `BaseScene` (see `dalat.js`) and register it in `SCENES` in `main.js`. To add a room, add a `createRoom({ id, name, scene })` call in `server.js`.

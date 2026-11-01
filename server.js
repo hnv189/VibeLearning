@@ -22,88 +22,109 @@ const STYLES = ['short', 'long', 'bun', 'cap', 'curly'];
 const STATUSES = ['chilling', 'studying', 'afk'];
 const EMOTES = ['👋', '😊', '😂', '❤️', '☕', '📚', '🎵', '😴'];
 // Must match ACTIONS / INTERACTIONS in public/js/main.js
-const ACTIONS = ['dance', 'wave', 'clap', 'jump', 'cheers', 'stop'];
+const ACTIONS = ['dance', 'wave', 'clap', 'jump', 'cheers', 'puke', 'stop'];
 const INTERACTIONS = ['wave', 'highfive', 'cheers', 'hug'];
 const HEX = /^#[0-9a-fA-F]{6}$/;
 
 const rooms = new Map();
 
-// scene must be a key of SCENES in public/js/main.js.
+// Each key must be a key of SCENES in public/js/main.js.
 // serve: 'hand' = food goes into your hand; 'table' = a waiter brings it to one of `tables` tables
 // (the count must match the tables drawn by that scene).
-function createRoom({ id, name, description, scene, thumb, music, ambience, menu, serve = 'hand', tables = 0 }) {
-  const amb = Object.fromEntries(AMBIENCE.map((k) => [k, ambience.includes(k)]));
-  rooms.set(id, {
-    id,
-    name,
-    description,
-    scene,
-    thumb,
-    menu,
-    serve,
-    tables: Array.from({ length: tables }, () => []),
-    players: new Map(),
-    hostId: null,
-    settings: { music, ambience: amb, ytStartedAt: null },
-  });
+const SCENES = {
+  'night-market': {
+    label: '🍜 Night Market Corner',
+    description: 'A noodle trolley under string lights. Grab a stool, chill, study.',
+    thumb: '🍜',
+    music: 'lofi',
+    ambience: ['sizzle', 'crowd', 'traffic'],
+    serve: 'hand',
+    tables: 0,
+    menu: [
+      { id: 'pho', emoji: '🍜', name: 'Phở noodle soup' },
+      { id: 'banhmi', emoji: '🥖', name: 'Bánh mì' },
+      { id: 'skewer', emoji: '🍢', name: 'Grilled skewers' },
+      { id: 'corn', emoji: '🌽', name: 'Grilled corn' },
+      { id: 'tea', emoji: '🧋', name: 'Milk tea' },
+    ],
+  },
+  'dalat-market': {
+    label: '🌲 Chợ Đà Lạt',
+    description: 'Cool highland afternoon on the market steps. Pine wind, birds, a fruit seller in her nón lá.',
+    thumb: '🌲',
+    music: 'acoustic',
+    ambience: ['crowd', 'traffic', 'birds', 'wind'],
+    serve: 'hand',
+    tables: 0,
+    menu: [
+      { id: 'strawberry', emoji: '🍓', name: 'Đà Lạt strawberries' },
+      { id: 'guava', emoji: '🍐', name: 'Fresh guava' },
+      { id: 'soymilk', emoji: '🥛', name: 'Hot soy milk' },
+      { id: 'banhtrang', emoji: '🍕', name: 'Bánh tráng nướng' },
+      { id: 'avocado', emoji: '🥑', name: 'Avocado ice cream' },
+    ],
+  },
+  nhau: {
+    label: '🍻 Quán Nhậu 1-2-3 Dzô',
+    description: 'Warm, buzzing beer place with a giant screen. Grab a table, call the waiter, dishes come to you.',
+    thumb: '🍻',
+    music: 'bolero',
+    ambience: ['crowd', 'sizzle', 'traffic', 'cheers'],
+    serve: 'table',
+    tables: 8,
+    menu: [
+      { id: 'beer', emoji: '🍺', name: 'Tháp bia' },
+      { id: 'lau', emoji: '🍲', name: 'Lẩu Thái' },
+      { id: 'oc', emoji: '🐌', name: 'Ốc len xào dừa' },
+      { id: 'muc', emoji: '🦑', name: 'Mực nướng sa tế' },
+      { id: 'canhga', emoji: '🍗', name: 'Cánh gà chiên mắm' },
+      { id: 'sodiep', emoji: '🦪', name: 'Sò điệp mỡ hành' },
+      { id: 'nemchua', emoji: '🍢', name: 'Nem chua rán' },
+      { id: 'lac', emoji: '🥜', name: 'Lạc rang' },
+      { id: 'soda', emoji: '🥤', name: 'Nước ngọt' },
+    ],
+  },
+};
+const SCENE_LIST = Object.entries(SCENES).map(([id, sc]) => ({ id, label: sc.label }));
+
+// put a room into a scene: its menu, serving style and tables come from the scene
+function applyScene(r, sceneId) {
+  const sc = SCENES[sceneId];
+  r.scene = sceneId;
+  r.menu = sc.menu;
+  r.serve = sc.serve;
+  r.tables = Array.from({ length: sc.tables }, () => []);
 }
 
-createRoom({
-  id: 'night-market',
-  name: 'Night Market Corner',
-  description: 'A noodle trolley under string lights. Grab a stool, chill, study.',
-  scene: 'night-market',
-  thumb: '🍜',
-  music: 'lofi',
-  ambience: ['sizzle', 'crowd', 'traffic'],
-  menu: [
-    { id: 'pho', emoji: '🍜', name: 'Phở noodle soup' },
-    { id: 'banhmi', emoji: '🥖', name: 'Bánh mì' },
-    { id: 'skewer', emoji: '🍢', name: 'Grilled skewers' },
-    { id: 'corn', emoji: '🌽', name: 'Grilled corn' },
-    { id: 'tea', emoji: '🧋', name: 'Milk tea' },
-  ],
-});
+function createRoom({ id, name, scene }) {
+  const sc = SCENES[scene];
+  const amb = Object.fromEntries(AMBIENCE.map((k) => [k, sc.ambience.includes(k)]));
+  const r = { id, name, homeScene: scene, players: new Map(), hostId: null, settings: { music: sc.music, ambience: amb, ytStartedAt: null } };
+  applyScene(r, scene);
+  rooms.set(id, r);
+}
 
-createRoom({
-  id: 'cho-da-lat',
-  name: 'Chợ Đà Lạt',
-  description: 'Cool highland afternoon on the market steps. Pine wind, birds, a fruit seller in her nón lá.',
-  scene: 'dalat-market',
-  thumb: '🌲',
-  music: 'acoustic',
-  ambience: ['crowd', 'traffic', 'birds', 'wind'],
-  menu: [
-    { id: 'strawberry', emoji: '🍓', name: 'Đà Lạt strawberries' },
-    { id: 'guava', emoji: '🍐', name: 'Fresh guava' },
-    { id: 'soymilk', emoji: '🥛', name: 'Hot soy milk' },
-    { id: 'banhtrang', emoji: '🍕', name: 'Bánh tráng nướng' },
-    { id: 'avocado', emoji: '🥑', name: 'Avocado ice cream' },
-  ],
-});
+createRoom({ id: 'night-market', name: 'Night Market Corner', scene: 'night-market' });
+createRoom({ id: 'cho-da-lat', name: 'Chợ Đà Lạt', scene: 'dalat-market' });
+createRoom({ id: 'quan-nhau', name: 'Quán Nhậu 1-2-3 Dzô', scene: 'nhau' });
 
-createRoom({
-  id: 'quan-nhau',
-  name: 'Quán Nhậu 1-2-3 Dzô',
-  description: 'Warm, buzzing beer place with a giant screen. Grab a table, call the waiter, dishes come to you.',
-  scene: 'nhau',
-  thumb: '🍻',
-  music: 'bolero',
-  ambience: ['crowd', 'sizzle', 'traffic', 'cheers'],
-  serve: 'table',
-  tables: 8,
-  menu: [
-    { id: 'beer', emoji: '🍺', name: 'Tháp bia' },
-    { id: 'lau', emoji: '🍲', name: 'Lẩu Thái' },
-    { id: 'oc', emoji: '🐌', name: 'Ốc len xào dừa' },
-    { id: 'muc', emoji: '🦑', name: 'Mực nướng sa tế' },
-    { id: 'canhga', emoji: '🍗', name: 'Cánh gà chiên mắm' },
-    { id: 'sodiep', emoji: '🦪', name: 'Sò điệp mỡ hành' },
-    { id: 'nemchua', emoji: '🍢', name: 'Nem chua rán' },
-    { id: 'lac', emoji: '🥜', name: 'Lạc rang' },
-    { id: 'soda', emoji: '🥤', name: 'Nước ngọt' },
-  ],
-});
+// a random free spot near the front of the floor (open in every scene)
+const spawnPoint = () => ({ x: Math.round(160 + Math.random() * 960), y: Math.round(610 + Math.random() * 80) });
+
+function roomPayload(r) {
+  return { id: r.id, name: r.name, scene: r.scene, menu: r.menu, serve: r.serve, tables: publicTables(r), scenes: SCENE_LIST };
+}
+
+// Optional TURN/STUN servers for voice chat, as JSON, e.g.
+// ICE_SERVERS='[{"urls":"turn:turn.example.com:3478","username":"u","credential":"p"}]'
+const ICE_SERVERS = (() => {
+  try {
+    const v = JSON.parse(process.env.ICE_SERVERS || 'null');
+    if (Array.isArray(v)) return v;
+  } catch {}
+  return [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' }];
+})();
+const RTC_TYPES = ['offer', 'answer', 'ice'];
 
 function publicTables(r) {
   const now = Date.now();
@@ -172,6 +193,7 @@ function publicPlayer(p) {
     status: p.status,
     holding: p.holding && p.holding.until > now ? { emoji: p.holding.emoji, ms: p.holding.until - now } : null,
     dancing: !!p.dancing,
+    mic: !!p.mic,
   };
 }
 
@@ -183,9 +205,11 @@ app.get('/api/rooms', (req, res) => {
     [...rooms.values()].map((r) => ({
       id: r.id,
       name: r.name,
-      description: r.description,
+      description: SCENES[r.scene].description,
       scene: r.scene,
-      thumb: r.thumb,
+      sceneLabel: SCENES[r.scene].label,
+      moved: r.scene !== r.homeScene,
+      thumb: SCENES[r.scene].thumb,
       count: r.players.size,
       max: MAX_PLAYERS,
     }))
@@ -213,10 +237,10 @@ io.on('connection', (socket) => {
       id: socket.id,
       name: cleanName(data.name),
       look: cleanLook(data.look),
-      x: Math.round(160 + Math.random() * 960),
-      y: Math.round(610 + Math.random() * 80),
+      ...spawnPoint(),
       status: 'chilling',
       holding: null,
+      mic: false,
     };
     r.players.set(socket.id, p);
     if (!r.hostId) r.hostId = socket.id;
@@ -225,7 +249,8 @@ io.on('connection', (socket) => {
 
     ack({
       selfId: socket.id,
-      room: { id: r.id, name: r.name, scene: r.scene, menu: r.menu, serve: r.serve, tables: publicTables(r) },
+      room: roomPayload(r),
+      iceServers: ICE_SERVERS,
       hostId: r.hostId,
       settings: settingsPayload(r),
       tracks: listTracks(),
@@ -342,6 +367,55 @@ io.on('connection', (socket) => {
     if (!room || room.hostId !== socket.id) return;
     room.settings = cleanSettings(s, room.settings);
     io.to(room.id).emit('settings', settingsPayload(room));
+  });
+
+  // the host moves the whole room to another scene; everyone stays connected
+  let lastScene = 0;
+  socket.on('changeScene', (sceneId) => {
+    const now = Date.now();
+    if (!room || room.hostId !== socket.id || !SCENES[sceneId] || sceneId === room.scene || now - lastScene < 3000) return;
+    lastScene = now;
+    applyScene(room, sceneId);
+    for (const p of room.players.values()) {
+      Object.assign(p, spawnPoint());
+      p.holding = null;
+      p.dancing = false;
+    }
+    io.to(room.id).emit('scene', {
+      room: roomPayload(room),
+      by: me().name,
+      players: [...room.players.values()].map((p) => ({ id: p.id, x: p.x, y: p.y })),
+    });
+  });
+
+  // voice chat: the browser streams audio peer-to-peer (WebRTC); the server only shows people
+  // who's got their mic on and passes the connection setup messages between two players
+  socket.on('mic', (on) => {
+    const p = me();
+    if (!p || typeof on !== 'boolean' || p.mic === on) return;
+    p.mic = on;
+    io.to(room.id).emit('mic', { id: p.id, on });
+  });
+
+  let rtcCount = 0, rtcWindow = 0;
+  socket.on('rtc', (msg = {}) => {
+    const p = me();
+    if (!p || !msg || !RTC_TYPES.includes(msg.type) || !['speaker', 'listener'].includes(msg.role)) return;
+    if (msg.to === p.id || !room.players.has(msg.to)) return;
+    const now = Date.now();
+    if (now - rtcWindow > 10000) {
+      rtcWindow = now;
+      rtcCount = 0;
+    }
+    if (++rtcCount > 600) return;
+    let data;
+    try {
+      data = JSON.stringify(msg.data);
+    } catch {
+      return;
+    }
+    if (!data || data.length > 20000) return;
+    io.to(msg.to).emit('rtc', { from: p.id, type: msg.type, role: msg.role, data: msg.data });
   });
 
   socket.on('giveHost', (targetId) => {

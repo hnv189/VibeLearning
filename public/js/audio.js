@@ -889,6 +889,61 @@ export class AudioEngine {
     L.sizzle.mod.gain.setTargetAtTime(0.6, now + 2.5, 1);
   }
 
+  // "hurk... bleaaargh": a gag, then a wet gurgling splash
+  pukeSound() {
+    if (!this.ctx) return;
+    const t = this.ctx.currentTime + 0.02;
+    const out = this.gain(0.45, this.master);
+    // two short throaty gags
+    for (const d of [0, 0.28]) {
+      const o = this.osc('sawtooth', 110);
+      const g = this.gain(0);
+      o.connect(this.filter('bandpass', 500, 2)).connect(g).connect(out);
+      o.frequency.setValueAtTime(130, t + d);
+      o.frequency.exponentialRampToValueAtTime(70, t + d + 0.14);
+      g.gain.setValueAtTime(0, t + d);
+      g.gain.linearRampToValueAtTime(0.3, t + d + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.001, t + d + 0.16);
+      o.start(t + d);
+      o.stop(t + d + 0.18);
+    }
+    // the long growl
+    const t0 = t + 0.6;
+    const o = this.osc('sawtooth', 95);
+    const lfo = this.osc('sine', 13);
+    lfo.connect(this.gain(18)).connect(o.frequency);
+    const vowel = this.filter('bandpass', 650, 2.5);
+    const g = this.gain(0);
+    o.connect(vowel).connect(g).connect(out);
+    vowel.frequency.setValueAtTime(900, t0);
+    vowel.frequency.linearRampToValueAtTime(420, t0 + 1.6);
+    o.frequency.setValueAtTime(105, t0);
+    o.frequency.linearRampToValueAtTime(70, t0 + 1.8);
+    g.gain.setValueAtTime(0, t0);
+    g.gain.linearRampToValueAtTime(0.28, t0 + 0.08);
+    g.gain.setValueAtTime(0.24, t0 + 1.4);
+    g.gain.linearRampToValueAtTime(0, t0 + 1.9);
+    o.start(t0);
+    lfo.start(t0);
+    o.stop(t0 + 2);
+    lfo.stop(t0 + 2);
+    // wet splash on the floor
+    const src = this.ctx.createBufferSource();
+    src.buffer = this.pink;
+    const sg = this.gain(0);
+    const lp = this.filter('lowpass', 1200, 4);
+    const wob = this.osc('sine', 9);
+    wob.connect(this.gain(600)).connect(lp.frequency);
+    src.connect(lp).connect(sg).connect(out);
+    sg.gain.setValueAtTime(0, t0 + 0.15);
+    sg.gain.linearRampToValueAtTime(0.5, t0 + 0.3);
+    sg.gain.setValueAtTime(0.4, t0 + 1.6);
+    sg.gain.linearRampToValueAtTime(0, t0 + 2.1);
+    wob.start(t0);
+    wob.stop(t0 + 2.2);
+    src.start(t0, Math.random() * 2, 2.2);
+  }
+
   // soft bell for the focus timer, bypasses the music volume
   chime() {
     if (!this.ctx) return;
