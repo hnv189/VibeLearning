@@ -1,5 +1,6 @@
 {
   "name": "vibe-street",
+  "engines": { "node": ">=20" },
   "version": "0.1.0",
   "private": true,
   "description": "A cozy multiplayer street-food corner for chilling and studying.",
