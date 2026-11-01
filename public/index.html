@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Vibe Street</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <canvas id="game"></canvas>
+
+  <!-- Lobby -->
+  <section id="landing" class="screen">
+    <div class="landing-card glass">
+      <div class="brand">
+        <h1>Vibe <span>Street</span></h1>
+        <p>Pull up a plastic stool by the noodle cart. Chill, study, listen to the street at night.</p>
+      </div>
+      <div class="landing-grid">
+        <div>
+          <h2>Pick a room</h2>
+          <div id="room-list"><p class="muted">Loading rooms…</p></div>
+        </div>
+        <form id="join-form" autocomplete="off">
+          <h2>Your character</h2>
+          <div class="avatar-row">
+            <canvas id="preview" width="300" height="360"></canvas>
+            <div class="avatar-side">
+              <label class="field">Name
+                <input id="name" class="input" maxlength="16" placeholder="e.g. Linh" required>
+              </label>
+              <button type="button" id="shuffle" class="ghost">🎲 Shuffle look</button>
+            </div>
+          </div>
+          <div class="opt"><span>Skin</span><div id="opt-skin" class="swatches"></div></div>
+          <div class="opt"><span>Shirt</span><div id="opt-shirt" class="swatches"></div></div>
+          <div class="opt"><span>Pants</span><div id="opt-pants" class="swatches"></div></div>
+          <div class="opt"><span>Hair</span><div id="opt-hair" class="swatches"></div></div>
+          <div class="opt"><span>Style</span><div id="opt-style" class="chips"></div></div>
+          <button class="primary" id="join-btn" type="submit">Join room →</button>
+          <p class="fine">🎧 Headphones recommended. Sound is generated live in your browser.</p>
+        </form>
+      </div>
+    </div>
+  </section>
+
+  <!-- In-room UI -->
+  <section id="room-ui" hidden>
+    <!-- laid over the wall TV drawn in the scene -->
+    <div id="tv" class="tv" hidden>
+      <div id="yt-player"></div>
+      <button type="button" id="tv-expand" class="tv-expand" title="Big screen">⤢</button>
+    </div>
+
+    <header class="topbar">
+      <div class="room-chip glass">
+        <span class="live-dot"></span>
+        <strong id="room-name"></strong>
+        <span id="room-count" class="muted"></span>
+        <span id="focus-chip" class="focus-chip" hidden></span>
+      </div>
+      <nav class="top-actions">
+        <button class="tab-btn glass" data-tab="vibe">🎵<span class="lbl"> Vibe</span></button>
+        <button class="tab-btn glass" data-tab="people">👥<span class="lbl"> People</span></button>
+        <button class="tab-btn glass" data-tab="focus">⏱️<span class="lbl"> Focus</span></button>
+        <button id="leave-btn" class="glass leave">Leave</button>
+      </nav>
+    </header>
+
+    <aside id="panel" class="panel glass" hidden>
+      <div class="tab" id="tab-vibe">
+        <h3>Sound &amp; vibe</h3>
+        <p id="host-note" class="note"></p>
+        <label class="field">Music
+          <select id="music-select" class="input"></select>
+        </label>
+        <form id="yt-form" class="field" autocomplete="off">YouTube
+          <div class="yt-row">
+            <input id="yt-url" class="input" placeholder="Paste a YouTube link">
+            <button class="ghost" type="submit">▶ Play</button>
+          </div>
+        </form>
+        <div class="field">Street sounds
+          <div id="ambience-list" class="toggles"></div>
+        </div>
+        <h3>Your volume</h3>
+        <label class="slider">🎵 Music <input type="range" id="vol-music" min="0" max="100"></label>
+        <label class="slider">🌃 Street <input type="range" id="vol-amb" min="0" max="100"></label>
+        <p class="fine">Volume is just for you. The host picks what everyone hears.</p>
+      </div>
+
+      <div class="tab" id="tab-people" hidden>
+        <h3>Around the cart</h3>
+        <ul id="people-list" class="people"></ul>
+      </div>
+
+      <div class="tab" id="tab-focus" hidden>
+        <h3>Focus timer</h3>
+        <div id="focus-mode" class="focus-mode">Focus</div>
+        <div id="focus-time" class="focus-time">25:00</div>
+        <div class="focus-buttons">
+          <button id="focus-start" class="primary small">Start</button>
+          <button id="focus-skip" class="ghost">Skip</button>
+          <button id="focus-reset" class="ghost">Reset</button>
+        </div>
+        <label class="field">Rhythm
+          <select id="focus-preset" class="input">
+            <option value="25/5">25 min focus · 5 min break</option>
+            <option value="50/10">50 min focus · 10 min break</option>
+            <option value="15/3">15 min focus · 3 min break</option>
+          </select>
+        </label>
+        <p class="fine">Starting a focus block sets you to 📖 Studying so others know you're heads-down.</p>
+      </div>
+    </aside>
+
+    <div id="chat-log" class="chat-log"></div>
+
+    <form id="chat-form" class="chatbar glass" autocomplete="off">
+      <select id="status" class="status-select" title="Your status">
+        <option value="chilling">😌 Chilling</option>
+        <option value="studying">📖 Studying</option>
+        <option value="afk">💤 AFK</option>
+      </select>
+      <input id="chat-input" maxlength="140" placeholder="Say something… (Enter)">
+      <div id="emotes" class="emotes"></div>
+      <button type="button" id="action-btn" class="action-btn" title="Moves: dance, wave, clap…">🕺 Moves</button>
+    </form>
+
+    <!-- 🕺 moves, opened from the chat bar -->
+    <div id="action-menu" class="popover glass" hidden></div>
+
+    <!-- click another person -->
+    <div id="player-menu" class="popover glass" hidden>
+      <div class="pm-head"><span id="pm-dot" class="dot"></span><strong id="pm-name"></strong></div>
+      <div id="pm-items"></div>
+    </div>
+
+    <!-- 1-1 private chat -->
+    <div id="dm-box" class="dm-box glass" hidden>
+      <div class="dm-head">
+        <span>💬 <strong id="dm-name"></strong> <span class="muted">· private</span></span>
+        <button type="button" id="dm-close" class="ghost" title="Close">✕</button>
+      </div>
+      <div id="dm-messages" class="dm-messages"></div>
+      <form id="dm-form" class="dm-form" autocomplete="off">
+        <input id="dm-input" maxlength="300" placeholder="Private message…">
+        <button class="ghost" type="submit">Send</button>
+      </form>
+    </div>
+
+    <div id="hint" class="hint glass">Click to walk · click a stool to sit · click the cart to order · WASD / arrows work too</div>
+
+    <div id="order-menu" class="order-menu glass" hidden>
+      <h3>What'll it be? 🍜</h3>
+      <div id="menu-items"></div>
+      <button type="button" id="menu-close" class="ghost">Maybe later</button>
+    </div>
+  </section>
+
+  <div id="toast" class="toast glass" hidden></div>
+  <div id="reconnect" class="toast glass" hidden>Connection lost — reconnecting…</div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script type="module" src="/js/main.js"></script>
+</body>
+</html>

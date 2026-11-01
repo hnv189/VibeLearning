@@ -1,0 +1,15 @@
+{
+  "name": "vibe-street",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A cozy multiplayer street-food corner for chilling and studying.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "socket.io": "^4.8.1"
+  }
+}
